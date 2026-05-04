@@ -537,7 +537,7 @@
           </div>
           <div class="group-card">
             <div class="group-name">פעוטות</div>
-            <div class="group-age">גילאי 16–24 חודשים</div>
+            <div class="group-age">גילאי 16–23 חודשים</div>
           </div>
           <div class="group-card">
             <div class="group-name">בוגרים</div>
@@ -562,11 +562,13 @@
         <div class="field">
           <label class="field-label" for="birthDate">תאריך לידה <span class="req">*</span></label>
           <input id="birthDate" type="date" name="birthDate" required>
+          <input id="group" name="group" type="hidden">
         </div>
 
         <div class="field">
           <label class="field-label">הקבוצה המתאימה</label>
           <div class="group-preview" id="groupPreview">תופיע אוטומטית לאחר בחירת תאריך לידה</div>
+          <div class="small-line">הקבוצה מחושבת לפי גיל הילד/ה בתחילת שנת הלימודים: 1.9.2026.</div>
         </div>
 
         <div class="field">
@@ -619,7 +621,7 @@
       </form>
 
       <div id="result" class="result"></div>
-      <div class="version">גרסה: <?= appVersion ?></div>
+      <div class="version">גרסה: 1.1 | חישוב גיל לפי 1.9.2026</div>
     </div>
   </div>
 
@@ -628,19 +630,21 @@
       window.WEBAPP_URL ||
       'https://script.google.com/macros/s/AKfycbxsqt5R3SIa5klpXSegQ2n0OJHIyuC838K5jOI1AhRgMHVNT0OLuVAOmSwwTlqEaD5h/exec';
 
+    const REFERENCE_DATE = new Date('2026-09-01T00:00:00');
+
     function calculateGroupPreview(dateStr) {
       if (!dateStr) return 'תופיע אוטומטית לאחר בחירת תאריך לידה';
 
       const birth = new Date(dateStr + 'T00:00:00');
-      const today = new Date();
+      const referenceDate = REFERENCE_DATE;
 
       if (isNaN(birth.getTime())) return 'תאריך לא תקין';
 
       let months =
-        (today.getFullYear() - birth.getFullYear()) * 12 +
-        (today.getMonth() - birth.getMonth());
+        (referenceDate.getFullYear() - birth.getFullYear()) * 12 +
+        (referenceDate.getMonth() - birth.getMonth());
 
-      if (today.getDate() < birth.getDate()) {
+      if (referenceDate.getDate() < birth.getDate()) {
         months--;
       }
 
@@ -660,7 +664,9 @@
     }
 
     document.getElementById('birthDate').addEventListener('change', function () {
-      document.getElementById('groupPreview').textContent = calculateGroupPreview(this.value);
+      const calculatedGroup = calculateGroupPreview(this.value);
+      document.getElementById('groupPreview').textContent = calculatedGroup;
+      document.getElementById('group').value = calculatedGroup;
     });
 
     document.getElementById('childId').addEventListener('input', function () {
@@ -679,6 +685,7 @@
       childId.value = childId.value.replace(/\D/g, '');
 
       const previewGroup = calculateGroupPreview(document.getElementById('birthDate').value);
+      document.getElementById('group').value = previewGroup;
 
       if (previewGroup === 'גיל שאינו תואם את קבוצות המעון' || previewGroup === 'תאריך לא תקין') {
         setResult('error', 'תאריך הלידה שהוזן אינו מתאים לקבוצות הגיל במעון.');
@@ -691,6 +698,10 @@
       try {
         const data = Object.fromEntries(new FormData(this).entries());
         data.action = 'register';
+        data.group = previewGroup;
+        data.calculatedGroup = previewGroup;
+        data.groupReferenceDate = '2026-09-01';
+        data.schoolYear = 'תשפ״ז 2026–2027';
 
         const res = await fetch(WEBAPP_URL, {
           method: 'POST',
@@ -705,14 +716,14 @@
         if (result.status === 'success') {
           setResult(
             'success',
-            `בקשת ההרשמה התקבלה בהצלחה.<br>הקבוצה המתאימה לפי הגיל היא: <strong>${result.group}</strong>.<br>הנהלת המעון תיצור אתכם קשר בהמשך להמשך התהליך.`
+            `בקשת ההרשמה התקבלה בהצלחה.<br>הקבוצה המתאימה לפי הגיל היא: <strong>${previewGroup}</strong>.<br>הנהלת המעון תיצור אתכם קשר בהמשך להמשך התהליך.`
           );
           this.reset();
           document.getElementById('groupPreview').textContent = 'תופיע אוטומטית לאחר בחירת תאריך לידה';
         } else if (result.status === 'waiting') {
           setResult(
             'waiting',
-            `הקבוצה המתאימה לפי הגיל (<strong>${result.group}</strong>) מלאה כעת.<br>בקשתכם נשמרה אוטומטית ברשימת ההמתנה.<br>מומלץ להישאר בקשר עם אודליה בהמשך ולבדוק האם התפנה מקום.`
+            `הקבוצה המתאימה לפי הגיל (<strong>${previewGroup}</strong>) מלאה כעת.<br>בקשתכם נשמרה אוטומטית ברשימת ההמתנה.<br>מומלץ להישאר בקשר עם אודליה בהמשך ולבדוק האם התפנה מקום.`
           );
           this.reset();
           document.getElementById('groupPreview').textContent = 'תופיע אוטומטית לאחר בחירת תאריך לידה';
