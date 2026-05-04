@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
   <style>
     * { box-sizing: border-box; }
@@ -558,9 +559,9 @@
 
         <div class="field">
           <label class="field-label" for="birthDate">תאריך לידה <span class="req">*</span></label>
-          <input id="birthDate" type="text" name="birthDateDisplay" placeholder="dd/mm/yyyy" inputmode="numeric" maxlength="10" required>
+          <input id="birthDate" type="text" name="birthDateDisplay" placeholder="dd/mm/yyyy" required>
           <input id="birthDateIso" type="hidden" name="birthDate">
-          <div class="small-line">יש להזין תאריך בפורמט יום/חודש/שנה, לדוגמה: 19/03/2025</div>
+          <div class="small-line">יש לבחור תאריך מהלוח. התצוגה היא יום/חודש/שנה, לדוגמה: 19/3/2025</div>
           <input id="group" name="group" type="hidden">
         </div>
 
@@ -620,9 +621,12 @@
       </form>
 
       <div id="result" class="result"></div>
-      <div class="version">גרסה: 1.1 | חישוב גיל לפי 1.9.2026</div>
+      <div class="version">גרסה: 1.2 | תאריך ישראלי עם לוח שנה</div>
     </div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/he.js"></script>
 
   <script>
     const WEBAPP_URL =
@@ -631,29 +635,13 @@
 
     const REFERENCE_DATE = new Date('2026-09-01T00:00:00');
 
-    function normalizeIsraeliDate(dateStr) {
-      if (!dateStr) return null;
+    function toIsoDate(dateObj) {
+      if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) return null;
 
-      const trimmed = dateStr.trim();
-      const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (!match) return null;
-
-      const day = Number(match[1]);
-      const month = Number(match[2]);
-      const year = Number(match[3]);
-
-      if (month < 1 || month > 12 || day < 1 || year < 1900) return null;
-
-      const candidate = new Date(year, month - 1, day);
-      if (
-        candidate.getFullYear() !== year ||
-        candidate.getMonth() !== month - 1 ||
-        candidate.getDate() !== day
-      ) {
-        return null;
-      }
-
-      return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
 
     function calculateGroupPreview(dateStr) {
@@ -687,27 +675,31 @@
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function updateBirthDateDerivedFields() {
-      const birthDateInput = document.getElementById('birthDate');
+    function updateBirthDateDerivedFields(isoDate) {
       const birthDateIsoInput = document.getElementById('birthDateIso');
-      const normalizedIsoDate = normalizeIsraeliDate(birthDateInput.value);
 
-      if (!normalizedIsoDate) {
+      if (!isoDate) {
         birthDateIsoInput.value = '';
-        document.getElementById('groupPreview').textContent = birthDateInput.value.trim()
-          ? 'תאריך לא תקין'
-          : 'תופיע אוטומטית לאחר בחירת תאריך לידה';
+        document.getElementById('groupPreview').textContent = 'תופיע אוטומטית לאחר בחירת תאריך לידה';
         document.getElementById('group').value = '';
         return;
       }
 
-      const calculatedGroup = calculateGroupPreview(normalizedIsoDate);
-      birthDateIsoInput.value = normalizedIsoDate;
+      const calculatedGroup = calculateGroupPreview(isoDate);
+      birthDateIsoInput.value = isoDate;
       document.getElementById('groupPreview').textContent = calculatedGroup;
       document.getElementById('group').value = calculatedGroup;
     }
 
-    document.getElementById('birthDate').addEventListener('input', updateBirthDateDerivedFields);
+    const birthDatePicker = flatpickr('#birthDate', {
+      locale: flatpickr.l10ns.he,
+      dateFormat: 'j/n/Y',
+      allowInput: false,
+      onChange: function (selectedDates) {
+        const isoDate = selectedDates.length ? toIsoDate(selectedDates[0]) : '';
+        updateBirthDateDerivedFields(isoDate);
+      }
+    });
 
 
     document.getElementById('childId').addEventListener('input', function () {
@@ -726,10 +718,10 @@
       childId.value = childId.value.replace(/\D/g, '');
 
       const birthDateInput = document.getElementById('birthDate');
-      const isoBirthDate = normalizeIsraeliDate(birthDateInput.value);
+      const isoBirthDate = document.getElementById('birthDateIso').value;
 
       if (!isoBirthDate) {
-        setResult('error', 'תאריך הלידה אינו תקין. יש להזין תאריך בפורמט יום/חודש/שנה, לדוגמה: 19/03/2025.');
+        setResult('error', 'יש לבחור תאריך לידה מהלוח.');
         return;
       }
 
@@ -771,14 +763,16 @@
             `בקשת ההרשמה התקבלה בהצלחה.<br>הקבוצה המתאימה לפי הגיל היא: <strong>${previewGroup}</strong>.<br>הנהלת המעון תיצור אתכם קשר בהמשך להמשך התהליך.`
           );
           this.reset();
-          document.getElementById('groupPreview').textContent = 'תופיע אוטומטית לאחר בחירת תאריך לידה';
+          birthDatePicker.clear();
+          updateBirthDateDerivedFields('');
         } else if (result.status === 'waiting') {
           setResult(
             'waiting',
             `הקבוצה המתאימה לפי הגיל (<strong>${previewGroup}</strong>) מלאה כעת.<br>בקשתכם נשמרה אוטומטית ברשימת ההמתנה.<br>מומלץ להישאר בקשר עם אודליה בהמשך ולבדוק האם התפנה מקום.`
           );
           this.reset();
-          document.getElementById('groupPreview').textContent = 'תופיע אוטומטית לאחר בחירת תאריך לידה';
+          birthDatePicker.clear();
+          updateBirthDateDerivedFields('');
         } else if (result.status === 'duplicate') {
           setResult('error', result.message || 'כבר קיימת הרשמה עבור תעודת זהות זו.');
         } else {
