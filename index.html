@@ -226,7 +226,6 @@
     input[type="text"],
     input[type="email"],
     input[type="tel"],
-    input[type="date"],
     select,
     textarea {
       width: 100%;
@@ -250,7 +249,6 @@
     input[type="text"]:focus,
     input[type="email"]:focus,
     input[type="tel"]:focus,
-    input[type="date"]:focus,
     select:focus,
     textarea:focus {
       outline: none;
@@ -476,8 +474,7 @@
       input[type="text"],
       input[type="email"],
       input[type="tel"],
-      input[type="date"],
-      select,
+        select,
       textarea {
         font-size: 16px;
         min-height: 52px;
@@ -561,7 +558,9 @@
 
         <div class="field">
           <label class="field-label" for="birthDate">תאריך לידה <span class="req">*</span></label>
-          <input id="birthDate" type="date" name="birthDate" required>
+          <input id="birthDate" type="text" name="birthDateDisplay" placeholder="dd/mm/yyyy" inputmode="numeric" maxlength="10" required>
+          <input id="birthDateIso" type="hidden" name="birthDate">
+          <div class="small-line">יש להזין תאריך בפורמט יום/חודש/שנה, לדוגמה: 19/03/2025</div>
           <input id="group" name="group" type="hidden">
         </div>
 
@@ -632,6 +631,31 @@
 
     const REFERENCE_DATE = new Date('2026-09-01T00:00:00');
 
+    function normalizeIsraeliDate(dateStr) {
+      if (!dateStr) return null;
+
+      const trimmed = dateStr.trim();
+      const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (!match) return null;
+
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+
+      if (month < 1 || month > 12 || day < 1 || year < 1900) return null;
+
+      const candidate = new Date(year, month - 1, day);
+      if (
+        candidate.getFullYear() !== year ||
+        candidate.getMonth() !== month - 1 ||
+        candidate.getDate() !== day
+      ) {
+        return null;
+      }
+
+      return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    }
+
     function calculateGroupPreview(dateStr) {
       if (!dateStr) return 'תופיע אוטומטית לאחר בחירת תאריך לידה';
 
@@ -663,11 +687,28 @@
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    document.getElementById('birthDate').addEventListener('change', function () {
-      const calculatedGroup = calculateGroupPreview(this.value);
+    function updateBirthDateDerivedFields() {
+      const birthDateInput = document.getElementById('birthDate');
+      const birthDateIsoInput = document.getElementById('birthDateIso');
+      const normalizedIsoDate = normalizeIsraeliDate(birthDateInput.value);
+
+      if (!normalizedIsoDate) {
+        birthDateIsoInput.value = '';
+        document.getElementById('groupPreview').textContent = birthDateInput.value.trim()
+          ? 'תאריך לא תקין'
+          : 'תופיע אוטומטית לאחר בחירת תאריך לידה';
+        document.getElementById('group').value = '';
+        return;
+      }
+
+      const calculatedGroup = calculateGroupPreview(normalizedIsoDate);
+      birthDateIsoInput.value = normalizedIsoDate;
       document.getElementById('groupPreview').textContent = calculatedGroup;
       document.getElementById('group').value = calculatedGroup;
-    });
+    }
+
+    document.getElementById('birthDate').addEventListener('input', updateBirthDateDerivedFields);
+
 
     document.getElementById('childId').addEventListener('input', function () {
       this.value = this.value.replace(/\D/g, '').slice(0, 9);
@@ -684,7 +725,16 @@
       const childId = document.getElementById('childId');
       childId.value = childId.value.replace(/\D/g, '');
 
-      const previewGroup = calculateGroupPreview(document.getElementById('birthDate').value);
+      const birthDateInput = document.getElementById('birthDate');
+      const isoBirthDate = normalizeIsraeliDate(birthDateInput.value);
+
+      if (!isoBirthDate) {
+        setResult('error', 'תאריך הלידה אינו תקין. יש להזין תאריך בפורמט יום/חודש/שנה, לדוגמה: 19/03/2025.');
+        return;
+      }
+
+      document.getElementById('birthDateIso').value = isoBirthDate;
+      const previewGroup = calculateGroupPreview(isoBirthDate);
       document.getElementById('group').value = previewGroup;
 
       if (previewGroup === 'גיל שאינו תואם את קבוצות המעון' || previewGroup === 'תאריך לא תקין') {
@@ -698,6 +748,8 @@
       try {
         const data = Object.fromEntries(new FormData(this).entries());
         data.action = 'register';
+        data.birthDate = isoBirthDate;
+        data.birthDateDisplay = birthDateInput.value.trim();
         data.group = previewGroup;
         data.calculatedGroup = previewGroup;
         data.groupReferenceDate = '2026-09-01';
