@@ -30,6 +30,12 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Install ffmpeg
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Download generated media
         if: steps.guard.outputs.skip == 'false'
         run: |
