@@ -1,0 +1,65 @@
+name: Fetch generated media
+
+# One-shot helper: downloads the Higgsfield-generated hero video and section
+# images (the build sandbox cannot reach the Higgsfield CDN), slices the video
+# into scroll-scrub frames with ffmpeg, and commits the assets to the branch.
+# Triggered on push because workflow_dispatch is only registered for workflows
+# that exist on the default branch; the guard below makes re-runs a no-op.
+on:
+  push:
+    branches:
+      - claude/highspeed-mobile-login-h9chw8
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/highspeed-mobile-login-h9chw8
+
+      - name: Skip if assets already fetched
+        id: guard
+        run: |
+          if [ -f assets/frames/manifest.json ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install ffmpeg
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Download generated media
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          mkdir -p assets/frames /tmp/media
+          curl -fSL -o /tmp/media/hero.mp4 "https://d8j0ntlcm91z4.cloudfront.net/user_3CehPCQXdWjHpxDXDFZwGC8Jpky/hf_20260611_201758_c63546cd-efb5-4ffa-aa96-30cac5c6bd36.mp4"
+          curl -fSL -o /tmp/media/interior.png "https://d8j0ntlcm91z4.cloudfront.net/user_3CehPCQXdWjHpxDXDFZwGC8Jpky/hf_20260611_201842_ad05804c-8cf5-47f1-b169-9d4e90865f11.png"
+          curl -fSL -o /tmp/media/yard.png "https://d8j0ntlcm91z4.cloudfront.net/user_3CehPCQXdWjHpxDXDFZwGC8Jpky/hf_20260611_201941_a3e2ade0-c2c1-4ce9-a230-675068ccabdf.png"
+
+      - name: Slice video into scroll frames and optimize images
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          ffmpeg -y -i /tmp/media/hero.mp4 -vf "fps=24,scale=1280:-2" -frames:v 96 -c:v libwebp -quality 68 assets/frames/frame_%03d.webp
+          ffmpeg -y -i /tmp/media/interior.png -vf "scale=1600:-2" -c:v libwebp -quality 80 assets/interior.webp
+          ffmpeg -y -i /tmp/media/yard.png -vf "scale=1600:-2" -c:v libwebp -quality 80 assets/yard.webp
+          cp /tmp/media/hero.mp4 assets/hero.mp4
+          COUNT=$(ls assets/frames/frame_*.webp | wc -l)
+          printf '{"count": %d, "pad": 3, "prefix": "assets/frames/frame_", "suffix": ".webp"}\n' "$COUNT" > assets/frames/manifest.json
+          du -sh assets assets/frames
+
+      - name: Commit assets
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets
+          git commit -m "Add generated hero video frames and section images"
+          git push origin claude/highspeed-mobile-login-h9chw8
